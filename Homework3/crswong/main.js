@@ -164,74 +164,118 @@ d3.csv("pokemon_alopez247.csv").then(rawData => {
 
     const parallelStats = ["HP", "Attack", "Defense", "Sp_Atk", "Sp_Def", "Speed", "Total"];
 
-    // Ensure all fields are numbers
-rawData.forEach(d => {
+    // Normalize keys for easier use
+    rawData.forEach(d => {
+        d.Sp_Atk = d["Sp_Atk"];
+        d.Sp_Def = d["Sp_Def"];
+        parallelStats.forEach(stat => d[stat] = +d[stat]);
+    });
+
+    // Y-scales for each stat
+    const yScales = {};
     parallelStats.forEach(stat => {
-        d[stat] = +d[stat];
-    });
-});
-
-// Create y scales for each stat
-const yScales = {};
-parallelStats.forEach(stat => {
-    yScales[stat] = d3.scaleLinear()
-        .domain(d3.extent(rawData, d => d[stat]))
-        .range([parallelHeight, 0]);
-});
-
-// X scale
-const x3 = d3.scalePoint()
-    .domain(parallelStats)
-    .range([0, parallelWidth])
-    .padding(0.5);
-
-// Outer group (static position)
-const parallelGroup = svg.append("g")
-    .attr("transform", `translate(${parallelMargin.left}, ${parallelTop + parallelMargin.top})`);
-
-// Inner zoomable layer
-const zoomLayer = parallelGroup.append("g")
-    .attr("class", "zoom-layer");
-
-// Function to generate path for each line
-function path(d) {
-    return d3.line()(parallelStats.map(stat => [x3(stat), yScales[stat](d[stat])]));
-}
-
-// Draw polylines
-zoomLayer.selectAll("path")
-    .data(rawData)
-    .enter()
-    .append("path")
-    .attr("d", path)
-    .attr("fill", "none")
-    .attr("stroke", "rgba(100, 100, 200, 0.3)")
-    .attr("stroke-width", 1);
-
-// Draw axes
-const axesGroup = zoomLayer.append("g").attr("class", "axes");
-
-parallelStats.forEach(stat => {
-    const g = axesGroup.append("g")
-        .attr("transform", `translate(${x3(stat)}, 0)`);
-
-    g.call(d3.axisLeft(yScales[stat]));
-
-    g.append("text")
-        .attr("y", -10)
-        .attr("text-anchor", "middle")
-        .attr("fill", "black")
-        .text(stat);
-});
-
-// Zoom behavior
-const zoom = d3.zoom()
-    .scaleExtent([0.5, 5])
-    .on("zoom", event => {
-        zoomLayer.attr("transform", event.transform);
+        yScales[stat] = d3.scaleLinear()
+            .domain(d3.extent(rawData, d => d[stat]))
+            .range([parallelHeight, 0]);
     });
 
-parallelGroup.call(zoom);
+    // X-scale
+    const x3 = d3.scalePoint()
+        .domain(parallelStats)
+        .range([0, parallelWidth])
+        .padding(0.5);
+
+    // Outer group
+    const parallelGroup = svg.append("g")
+        .attr("transform", `translate(${parallelMargin.left}, ${parallelTop + parallelMargin.top})`);
+
+    // Zoom layer
+    const zoomLayer = parallelGroup.append("g")
+        .attr("class", "zoom-layer");
+
+    // Axis group
+    const axesGroup = zoomLayer.append("g").attr("class", "axes");
+
+    parallelStats.forEach(stat => {
+        const g = axesGroup.append("g")
+            .attr("transform", `translate(${x3(stat)}, 0)`);
+
+        g.call(d3.axisLeft(yScales[stat]));
+
+        g.append("text")
+            .attr("y", -10)
+            .attr("text-anchor", "middle")
+            .attr("fill", "black")
+            .text(stat);
+    });
+
+    // Zoom
+    const zoom = d3.zoom()
+        .scaleExtent([0.5, 5])
+        .on("zoom", event => {
+            zoomLayer.attr("transform", event.transform);
+        });
+
+    parallelGroup.call(zoom);
+
+    // Line path generator
+    function path(d) {
+        return d3.line()(parallelStats.map(stat => [x3(stat), yScales[stat](d[stat])]));
+    }
+
+    // Create Total slider UI
+    const totalExtent = d3.extent(rawData, d => d.Total);
+    let totalThreshold = totalExtent[0]; // starting value
+
+    const filterDiv = d3.select("#filters").style("margin", "20px");
+
+    filterDiv.append("label")
+        .attr("for", "total-slider")
+        .style("font-weight", "bold")
+        .text("Minimum Total: ");
+
+    filterDiv.append("input")
+        .attr("type", "range")
+        .attr("id", "total-slider")
+        .attr("min", totalExtent[0])
+        .attr("max", totalExtent[1])
+        .attr("value", totalExtent[0])
+        .attr("step", 1)
+        .style("width", "300px")
+        .on("input", function () {
+            totalThreshold = +this.value;
+            filterDiv.select("#slider-value").text(totalThreshold);
+            updateParallelPlot();
+        });
+
+    filterDiv.append("span")
+        .attr("id", "slider-value")
+        .style("margin-left", "10px")
+        .text(totalThreshold);
+
+    // Draw and update lines
+    function updateParallelPlot() {
+        const filteredData = rawData.filter(d => d.Total >= totalThreshold);
+
+        const lines = zoomLayer.selectAll("path.line")
+            .data(filteredData, d => d.Name);
+
+        lines.exit().remove();
+
+        lines
+            .attr("d", path);
+
+        lines.enter()
+            .append("path")
+            .attr("class", "line")
+            .attr("fill", "none")
+            .attr("stroke", "rgba(100, 100, 200, 0.3)")
+            .attr("stroke-width", 1)
+            .attr("d", path);
+    }
+
+    // Initial draw
+    updateParallelPlot();
 
 
 }).catch(error => {
